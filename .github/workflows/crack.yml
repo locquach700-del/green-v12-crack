@@ -1,22 +1,20 @@
 name: Build Cracked GREEN V12
+
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - 'original.apk'
-      - 'patches/**'
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
       - name: Install apktool
         run: |
@@ -29,29 +27,31 @@ jobs:
       - name: Decode APK
         run: |
           if [ ! -f original.apk ]; then
-            echo "Upload original.apk to repo root first"
+            echo "ERROR: Upload original.apk to repo root first (Add file → Upload files)"
             exit 1
           fi
           apktool d -f original.apk -o green
 
       - name: Apply patches
         run: |
-          # 1. GreenApi.validate always success
           python3 << 'PY'
-import os
+import os, glob
+
+# --- GreenApi.validate always success + no-op consume/log ---
 path = "green/smali_classes2/com/xyz/app/GreenApi.smali"
 if not os.path.exists(path):
     path = "green/smali/com/xyz/app/GreenApi.smali"
 with open(path) as f:
     c = f.read()
+
 start = c.find(".method public static validate(Ljava/lang/String;Z)Lcom/xyz/app/GreenApi$Result;")
 if start == -1:
-    print("validate not found")
-    exit(1)
-nextm = c.find("\n.method ", start+10)
-if nextm == -1: nextm = len(c)
+    raise SystemExit("validate method not found")
+nextm = c.find("\n.method ", start + 10)
+if nextm == -1:
+    nextm = len(c)
 end = c.rfind(".end method", start, nextm)
-new = '''.method public static validate(Ljava/lang/String;Z)Lcom/xyz/app/GreenApi$Result;
+new = """.method public static validate(Ljava/lang/String;Z)Lcom/xyz/app/GreenApi$Result;
     .registers 3
     .annotation system Ldalvik/annotation/Throws;
         value = {
@@ -69,12 +69,12 @@ new = '''.method public static validate(Ljava/lang/String;Z)Lcom/xyz/app/GreenAp
     iput-object v1, v0, Lcom/xyz/app/GreenApi$Result;->link:Ljava/lang/String;
     return-object v0
 .end method
-'''
-c = c[:start] + new + c[end+len(".end method"):]
-# also no-op consume + log
+"""
+c = c[:start] + new + c[end + len(".end method"):]
+
 for sig, body in [
 (".method public static consume(Lcom/xyz/app/GreenApi$Result;)V",
-'''.method public static consume(Lcom/xyz/app/GreenApi$Result;)V
+""".method public static consume(Lcom/xyz/app/GreenApi$Result;)V
     .registers 1
     .annotation system Ldalvik/annotation/Throws;
         value = {
@@ -83,9 +83,9 @@ for sig, body in [
     .end annotation
     return-void
 .end method
-'''),
+"""),
 (".method public static log(Landroid/content/Context;Ljava/lang/String;)V",
-'''.method public static log(Landroid/content/Context;Ljava/lang/String;)V
+""".method public static log(Landroid/content/Context;Ljava/lang/String;)V
     .registers 2
     .annotation system Ldalvik/annotation/Throws;
         value = {
@@ -94,66 +94,70 @@ for sig, body in [
     .end annotation
     return-void
 .end method
-''')
+""")
 ]:
     s = c.find(sig)
     if s != -1:
-        nm = c.find("\n.method ", s+10)
-        if nm == -1: nm = len(c)
+        nm = c.find("\n.method ", s + 10)
+        if nm == -1:
+            nm = len(c)
         e = c.rfind(".end method", s, nm)
-        c = c[:s] + body + c[e+len(".end method"):]
+        c = c[:s] + body + c[e + len(".end method"):]
+
 with open(path, "w") as f:
     f.write(c)
 print("GreenApi patched")
-PY
 
-          # 2. IntegrityVerifier + x22.a always true
-          python3 << 'PY'
-import os, glob
+# --- IntegrityVerifier + x22.a always true ---
 for pattern in ["green/smali/**/IntegrityVerifier.smali", "green/smali_classes*/**/IntegrityVerifier.smali"]:
-    for path in glob.glob(pattern, recursive=True):
-        with open(path) as f: c = f.read()
+    for p in glob.glob(pattern, recursive=True):
+        with open(p) as f:
+            c = f.read()
         start = c.find(".method static verify(Ljava/io/File;[[BLjava/lang/String;)Z")
         if start != -1:
-            nextm = c.find("\n.method ", start+10)
-            if nextm == -1: nextm = len(c)
+            nextm = c.find("\n.method ", start + 10)
+            if nextm == -1:
+                nextm = len(c)
             end = c.rfind(".end method", start, nextm)
-            new = '''.method static verify(Ljava/io/File;[[BLjava/lang/String;)Z
+            new = """.method static verify(Ljava/io/File;[[BLjava/lang/String;)Z
     .registers 3
     const/4 v0, 0x1
     return v0
 .end method
-'''
-            c = c[:start] + new + c[end+len(".end method"):]
-            with open(path, "w") as f: f.write(c)
-            print("IntegrityVerifier patched", path)
+"""
+            c = c[:start] + new + c[end + len(".end method"):]
+            with open(p, "w") as f:
+                f.write(c)
+            print("IntegrityVerifier patched", p)
+
 for pattern in ["green/smali/**/x22/a.smali", "green/smali_classes*/**/x22/a.smali"]:
-    for path in glob.glob(pattern, recursive=True):
-        with open(path) as f: c = f.read()
+    for p in glob.glob(pattern, recursive=True):
+        with open(p) as f:
+            c = f.read()
         start = c.find(".method public static a(Landroid/content/Context;)Z")
         if start != -1:
-            nextm = c.find("\n.method ", start+10)
-            if nextm == -1: nextm = len(c)
+            nextm = c.find("\n.method ", start + 10)
+            if nextm == -1:
+                nextm = len(c)
             end = c.rfind(".end method", start, nextm)
-            new = '''.method public static a(Landroid/content/Context;)Z
+            new = """.method public static a(Landroid/content/Context;)Z
     .registers 1
     const/4 v0, 0x1
     return v0
 .end method
-'''
-            c = c[:start] + new + c[end+len(".end method"):]
-            with open(path, "w") as f: f.write(c)
-            print("x22.a patched", path)
+"""
+            c = c[:start] + new + c[end + len(".end method"):]
+            with open(p, "w") as f:
+                f.write(c)
+            print("x22.a patched", p)
 PY
 
       - name: Build APK
-        run: |
-          apktool b green -o GREEN_V12_CRACKED_unsigned.apk
+        run: apktool b green -o GREEN_V12_CRACKED_unsigned.apk
 
       - name: Sign APK
         run: |
           keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" || true
-          # use apksigner if available, else jarsigner
           if command -v apksigner >/dev/null; then
             apksigner sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android --out GREEN_V12_CRACKED.apk GREEN_V12_CRACKED_unsigned.apk
           else
