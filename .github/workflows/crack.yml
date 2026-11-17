@@ -2,6 +2,8 @@ name: Build Cracked GREEN V12
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ main ]
 
 jobs:
   build:
@@ -27,7 +29,7 @@ jobs:
       - name: Decode APK
         run: |
           if [ ! -f original.apk ]; then
-            echo "ERROR: Upload original.apk to repo root first (Add file → Upload files)"
+            echo "ERROR: original.apk missing"
             exit 1
           fi
           apktool d -f original.apk -o green
@@ -37,7 +39,6 @@ jobs:
           python3 << 'PY'
 import os, glob
 
-# --- GreenApi.validate always success + no-op consume/log ---
 path = "green/smali_classes2/com/xyz/app/GreenApi.smali"
 if not os.path.exists(path):
     path = "green/smali/com/xyz/app/GreenApi.smali"
@@ -108,7 +109,6 @@ with open(path, "w") as f:
     f.write(c)
 print("GreenApi patched")
 
-# --- IntegrityVerifier + x22.a always true ---
 for pattern in ["green/smali/**/IntegrityVerifier.smali", "green/smali_classes*/**/IntegrityVerifier.smali"]:
     for p in glob.glob(pattern, recursive=True):
         with open(p) as f:
